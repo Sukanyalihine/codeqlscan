@@ -1,0 +1,42 @@
+name: CodeQL Analysis
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  codeql-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download CodeQL CLI from Artifactory
+        env:
+          ARTIFACTORY_URL: "https://your-artifactory.com/artifactory"
+          ARTIFACTORY_REPO: "your-repo"
+          ARTIFACTORY_USERNAME: ${{ secrets.ARTIFACTORY_USERNAME }}
+          ARTIFACTORY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
+        run: |
+          curl -u $ARTIFACTORY_USERNAME:$ARTIFACTORY_PASSWORD -O $ARTIFACTORY_URL/$ARTIFACTORY_REPO/codeql.tar.gz
+          tar -xvzf codeql.tar.gz
+          mv codeql /opt/codeql
+          echo "/opt/codeql" >> $GITHUB_PATH
+
+      - name: Initialize CodeQL
+        run: |
+          codeql database create codeql-db --language=java --source-root=.
+
+      - name: Perform CodeQL Analysis
+        run: |
+          codeql database analyze codeql-db --format=sarif-latest --output=codeql-results.sarif
+
+      - name: Upload CodeQL Results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: codeql-results.sarif
