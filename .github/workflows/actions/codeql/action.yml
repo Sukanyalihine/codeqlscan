@@ -1,0 +1,41 @@
+- name: "Composite CodeQL Scan Action"
+  description: "Downloads CodeQL CLI and Maven settings using curl, then runs the CodeQL scan and Maven build."
+  inputs:
+    
+    quality-gate:
+      description: "Quality gate value to choose the CodeQL config"
+      required: true
+  runs:
+    using: "composite"
+    steps:
+     - name: Download CodeQL CLI
+       run: curl -k -u "${{ inputs.artifactory-username }}:${{ inputs.artifactory-password }}" -L -o abc.tar.gz "${{ inputs.artifactory-url }}/abc.tar.gz"
+     - name: Extract CodeQL CLI
+       run: |
+         mkdir -p codeql
+         tar -xvzf abc.tar.gz -C codeql --strip-components=1
+     - name: Download Maven Settings file
+       run: curl -k -u "${{ inputs.artifactory-username }}:${{ inputs.artifactory-password }}" -L -o artifactory_npa.xml "${{ inputs.artifactory-url }}/mvn-snapshot-local/com/db/ars/ars-web/artifactory_npa.xml"
+     - name: Run CodeQL scan with Maven build
+       run: |
+        ./codeql/codeql database create codeql-db \
+          --source-root=. \
+          --language=java \
+          --codescannig-config="codeql_configs/configs/release-configs/java-${{ inputs.quality-gate }}.yaml" \
+          --command="mvn --settings ${PWD}/artifactory_npa.xml clean deploy -Pdap -DskipTests -Pfabriceidp" \
+          --overwrite
+     - name: Generate CSV Report
+       run: ./codeql/codeql database create codeql-db --ram=4096 --format=csv --output=codeql-result.csv
+     - name: Prepend CSV header
+       run: |
+        mkdir -p temp
+        echo "name,description,severity,alert message, error file path, start line,start column,end line,end column" > temp/header.csv
+        cat temp/header.csv codeql-result.csv > codeql-results.csv
+     - name: Check for errors in CodeQL results
+       run: |
+        error=$(grep -i error codeql-result.csv || true)
+        echo "Errors: $error"
+        if [ -n "$error" ]; then
+        echo "Errors identified in scan. Failing the build."
+        exit 1
+      fi
